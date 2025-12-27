@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Iwers Dash - Hosted Edition</title>
+    <style>
+        body {
+            margin: 0; background: #000; color: #0ff;
+            font-family: 'Segoe UI', Arial, sans-serif;
+            display: flex; flex-direction: column; align-items: center;
+            justify-content: center; height: 100vh; overflow: hidden;
+        }
+
+        /* Скрытая пасхалка */
+        #secret-trigger {
+            position: absolute; top: 0; left: 0;
+            width: 60px; height: 60px;
+            cursor: pointer; z-index: 9999;
+        }
+        #secret-text {
+            position: absolute; top: 70px; left: 20px;
+            color: #ff0055; font-weight: bold;
+            display: none; text-shadow: 0 0 10px #ff0055;
+            z-index: 9999;
+        }
+
+        /* Скругленное меню */
+        .menu-ui {
+            border: 2px solid #0ff; 
+            padding: 25px; 
+            background: #000;
+            box-shadow: 0 0 30px rgba(0, 255, 255, 0.2); 
+            text-align: center;
+            width: 380px;
+            border-radius: 25px;
+        }
+
+        h1 { font-size: 2.5rem; letter-spacing: 4px; margin-bottom: 20px; }
+
+        .btn {
+            background: #000; color: #0ff; border: 1px solid #0ff;
+            padding: 10px 15px; margin: 5px; cursor: pointer;
+            font-weight: bold; text-transform: uppercase; 
+            transition: 0.2s;
+            border-radius: 12px;
+        }
+
+        .btn:hover { background: #0ff; color: #000; box-shadow: 0 0 15px #0ff; }
+        .btn.active { background: #0ff; color: #000; }
+
+        canvas { 
+            display: none; background: #000; 
+            border-bottom: 2px solid #0ff; 
+        }
+
+        #stats {
+            position: absolute; top: 15px; width: 100%;
+            display: none; justify-content: space-around;
+            font-family: monospace; font-size: 20px;
+            background: rgba(0,0,0,0.5);
+            padding: 10px 0;
+            border-radius: 0 0 20px 20px;
+        }
+
+        .settings { margin-bottom: 20px; border-bottom: 1px solid #222; padding-bottom: 15px; }
+        
+        input[type="color"] {
+            border-radius: 8px; border: 1px solid #0ff;
+            background: none; height: 35px; cursor: pointer;
+            vertical-align: middle;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="secret-trigger"></div>
+    <div id="secret-text">я люблю маму ресета</div>
+
+    <div id="stats">
+        <div>IWERS DASH</div>
+        <div>LVL: <span id="l-val">1</span></div>
+        <div>PROG: <span id="p-val">0</span>%</div>
+    </div>
+
+    <div id="menu" class="menu-ui">
+        <h1>IWERS DASH</h1>
+        
+        <div class="settings">
+            <p>ПЕРСОНАЖ (СОХРАНЯЕТСЯ)</p>
+            <button class="btn" id="b-square" onclick="setS('square')">Квадрат</button>
+            <button class="btn" id="b-circle" onclick="setS('circle')">Круг</button>
+            <button class="btn" id="b-triangle" onclick="setS('triangle')">Треугольник</button>
+            <br><br>
+            <input type="file" id="img-up" hidden accept="image/*">
+            <button class="btn" onclick="document.getElementById('img-up').click()">ФОТО</button>
+            <input type="color" id="color-pick" value="#00ffff" onchange="saveSettings()">
+            <button class="btn" style="font-size: 10px; border-color: #ff0055; color: #ff0055;" onclick="resetPlayer()">Сброс</button>
+        </div>
+
+        <p>СЛОЖНОСТЬ</p>
+        <button class="btn" onclick="start(1)">Chill</button>
+        <button class="btn" onclick="start(2)">Normal</button>
+        <button class="btn" onclick="start(3)">Expert</button>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = 900;
+    canvas.height = 400;
+
+    // --- ЛОГИКА СОХРАНЕНИЯ ---
+    let state = {
+        active: false,
+        shape: 'square',
+        color: '#00ffff',
+        speed: 3,
+        obstacles: [],
+        frame: 0,
+        img: new Image(),
+        hasImg: false
+    };
+
+    function saveSettings() {
+        const settings = {
+            shape: state.shape,
+            color: document.getElementById('color-pick').value,
+            customImg: state.hasImg ? state.img.src : null
+        };
+        localStorage.setItem('iwersDash_settings', JSON.stringify(settings));
+    }
+
+    function loadSettings() {
+        const saved = localStorage.getItem('iwersDash_settings');
+        if (saved) {
+            const parsed = JSON.parse(saved);
+            state.shape = parsed.shape || 'square';
+            state.color = parsed.color || '#00ffff';
+            document.getElementById('color-pick').value = state.color;
+            if (parsed.customImg) {
+                state.img.src = parsed.customImg;
+                state.img.onload = () => state.hasImg = true;
+            }
+            updateBtnUI();
+        } else {
+            updateBtnUI();
+        }
+    }
+
+    function resetPlayer() {
+        localStorage.removeItem('iwersDash_settings');
+        location.reload();
+    }
+
+    function updateBtnUI() {
+        document.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
+        const activeBtn = document.getElementById('b-' + state.shape);
+        if(activeBtn) activeBtn.classList.add('active');
+    }
+
+    // --- ПАСХАЛКА ---
+    document.getElementById('secret-trigger').onclick = () => {
+        const txt = document.getElementById('secret-text');
+        txt.style.display = 'block';
+        setTimeout(() => { txt.style.display = 'none'; }, 2500);
+    };
+
+    // --- ЗВУК ---
+    const audio = new (window.AudioContext || window.webkitAudioContext)();
+    function playSfx(freq, type, dur, vol=0.1) {
+        if(audio.state === 'suspended') return;
+        const o = audio.createOscillator();
+        const g = audio.createGain();
+        o.type = type; o.frequency.setValueAtTime(freq, audio.currentTime);
+        g.gain.setValueAtTime(vol, audio.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + dur);
+        o.connect(g); g.connect(audio.destination);
+        o.start(); o.stop(audio.currentTime + dur);
+    }
+
+    // --- ИГРА ---
+    const player = {
+        x: 120, y: 340, size: 40, vy: 0, 
+        gravity: 0.4, jumpPower: -9.0, grounded: false, angle: 0
+    };
+
+    function setS(s) {
+        state.shape = s;
+        updateBtnUI();
+        saveSettings();
+    }
+
+    document.getElementById('img-up').onchange = (e) => {
+        const file = e.target.files[0];
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            state.img.src = ev.target.result;
+            state.img.onload = () => {
+                state.hasImg = true;
+                saveSettings();
+            };
+        };
+        reader.readAsDataURL(file);
+    };
+
+    function start(lvl) {
+        if(audio.state === 'suspended') audio.resume();
+        document.getElementById('menu').style.display = 'none';
+        document.getElementById('stats').style.display = 'flex';
+        canvas.style.display = 'block';
+
+        state.active = true;
+        state.color = document.getElementById('color-pick').value;
+        state.speed = 2.8 + (lvl * 0.7);
+        document.getElementById('l-val').innerText = lvl;
+
+        state.obstacles = [];
+        for(let i=0; i<60; i++) {
+            state.obstacles.push({ x: 1000 + (i * 650) + Math.random()*300 });
+        }
+        loop();
+    }
+
+    function drawPlayer() {
+        ctx.save();
+        ctx.translate(player.x + player.size/2, player.y + player.size/2);
+        if(!player.grounded) player.angle += 0.08; else player.angle = 0;
+        ctx.rotate(player.angle);
+
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = state.color;
+        ctx.fillStyle = state.color;
+        ctx.strokeStyle = "#fff";
+        ctx.lineWidth = 2;
+
+        const s = player.size;
+        ctx.beginPath();
+        if(state.shape === 'square') {
+            const r = 10;
+            ctx.moveTo(-s/2+r, -s/2); ctx.lineTo(s/2-r, -s/2); ctx.quadraticCurveTo(s/2, -s/2, s/2, -s/2+r);
+            ctx.lineTo(s/2, s/2-r); ctx.quadraticCurveTo(s/2, s/2, s/2-r, s/2);
+            ctx.lineTo(-s/2+r, s/2); ctx.quadraticCurveTo(-s/2, s/2, -s/2, s/2-r);
+            ctx.lineTo(-s/2, -s/2+r); ctx.quadraticCurveTo(-s/2, -s/2, -s/2+r, -s/2);
+        } else if(state.shape === 'circle') {
+            ctx.arc(0, 0, s/2, 0, Math.PI*2);
+        } else {
+            ctx.moveTo(0, -s/2); ctx.lineTo(s/2, s/2); ctx.lineTo(-s/2, s/2);
+        }
+        ctx.closePath();
+
+        if(state.hasImg) {
+            ctx.save(); ctx.clip();
+            ctx.drawImage(state.img, -s/2, -s/2, s, s);
+            ctx.restore();
+        } else {
+            ctx.fill();
+        }
+        ctx.stroke();
+        ctx.restore();
+    }
+
+    function loop() {
+        if(!state.active) return;
+        ctx.fillStyle = "#000";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.strokeStyle = state.color;
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(0, 380); ctx.lineTo(canvas.width, 380); ctx.stroke();
+
+        player.vy += player.gravity;
+        player.y += player.vy;
+        if(player.y + player.size > 380) {
+            player.y = 380 - player.size;
+            player.vy = 0;
+            player.grounded = true;
+        }
+
+        drawPlayer();
+
+        state.obstacles.forEach((o) => {
+            o.x -= state.speed;
+            ctx.shadowBlur = 10; ctx.shadowColor = "#ff0055";
+            ctx.fillStyle = "#ff0055";
+            ctx.beginPath();
+            ctx.moveTo(o.x, 380); ctx.lineTo(o.x + 20, 335); ctx.lineTo(o.x + 40, 380);
+            ctx.fill();
+
+            let hb = 12;
+            if (player.x + player.size - hb > o.x + 5 && 
+                player.x + hb < o.x + 35 && 
+                player.y + player.size - hb > 335) {
+                state.active = false;
+                playSfx(100, 'sawtooth', 0.4, 0.2);
+                setTimeout(() => location.reload(), 600);
+            }
+        });
+
+        let currentProg = Math.min(100, Math.floor((state.frame * state.speed) / 350));
+        document.getElementById('p-val').innerText = currentProg;
+        if(currentProg >= 100) { state.active = false; alert("ПОБЕДА!"); location.reload(); }
+
+        state.frame++;
+        requestAnimationFrame(loop);
+    }
+
+    window.onkeydown = (e) => { 
+        if((e.code === 'Space' || e.code === 'ArrowUp') && player.grounded && state.active) {
+            player.vy = player.jumpPower; 
+            player.grounded = false; 
+            playSfx(400, 'square', 0.1);
+        }
+    };
+    window.onmousedown = () => {
+        if(player.grounded && state.active) {
+            player.vy = player.jumpPower; 
+            player.grounded = false; 
+            playSfx(400, 'square', 0.1);
+        }
+    };
+
+    window.onload = loadSettings;
+</script>
+</body>
+</html>
